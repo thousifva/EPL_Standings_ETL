@@ -8,6 +8,10 @@ The pipeline covers the full route from source to dashboard: ask an API for data
 
 **Flow:** API-Football -> raw JSON -> pandas DataFrame -> staging tables -> stored procedures (UPSERT) -> warehouse tables in SQL Server -> Power BI
 
+![End-to-end pipeline](docs/pipeline-architecture.png)
+
+**New here? Read the [step-by-step walkthrough](docs/walkthrough.md)** - every stage explained with the actual code, why it is built that way, real run outputs, and the upsert workflow diagram.
+
 | Stage | What happens | Where (notebook) |
 |---|---|---|
 | Extract | GET request to the API, reply saved as raw JSON | Cells 3 |
@@ -76,6 +80,8 @@ Blank user/password in the config cell means Windows Authentication; no database
 ## Structure
 
 - `PL_Standings_ETL.ipynb` - the author's final notebook: extract, transform, load and check, step by step, with its real run outputs
+- `docs/walkthrough.md` - step-by-step explanation of the whole pipeline: what the code does, why, expected outputs, troubleshooting
+- `docs/pipeline-architecture.png`, `docs/upsert-workflow.png` - explanatory diagrams (pipeline stages; how the idempotent upsert works)
 - `sql/01_create_tables.sql`, `02_usp_upsert_pl_standings.sql`, `03_usp_upsert_dim_team.sql` - standalone table definitions and upsert stored procedures (reconstructed from project notes; the notebook carries the same SQL inline)
 - `sql/04_checks_and_upsert_demo.sql` - the author's validation script: object inventory, league-table join, deliberate-damage upsert test, procedure listing
 - `powerbi/` - the report file (.pbix), the Floodlit Pitch theme, and a dashboard screenshot
