@@ -4,7 +4,7 @@ An end-to-end data pipeline that pulls English Premier League standings from the
 
 ## About this project
 
-Most beginner analysis stops at a CSV. This project goes the full route a data team would: ask an API for data, keep the raw reply, shape it into clean tables, load it into a real database that protects itself from bad data, prove the load worked, and only then build a dashboard on top. Everything is driven from one Jupyter notebook, and rerunning it any week of the season refreshes the numbers without creating duplicates.
+The pipeline covers the full route from source to dashboard: ask an API for data, keep the raw reply, shape it into clean tables, load it into a database that enforces its own data-quality rules, check the load, and build a report on top. Everything is driven from one Jupyter notebook, and its upsert design means rerunning it refreshes the numbers instead of duplicating them.
 
 **Flow:** API-Football -> raw JSON -> pandas DataFrame -> staging tables -> stored procedures (UPSERT) -> warehouse tables in SQL Server -> Power BI
 
@@ -20,7 +20,7 @@ Most beginner analysis stops at a CSV. This project goes the full route a data t
 
 The pipeline is built around the habits that make data work trustworthy:
 
-- **Idempotent upserts.** Each stored procedure runs an `UPDATE ... JOIN` then an `INSERT ... WHERE NOT EXISTS` inside one transaction. Run the load twice, or after every match week, and you get fresh numbers with no duplicates; if anything fails halfway, the transaction rolls back.
+- **Idempotent upserts.** Each stored procedure runs an `UPDATE ... JOIN` then an `INSERT ... WHERE NOT EXISTS` inside one transaction, so a rerun (for example after a match week) updates changed rows instead of adding duplicates. The procedures are written so a failure partway through rolls the transaction back rather than leaving a half-applied batch.
 - **The database enforces the rules.** `pl_standings` has a composite primary key on (`season`, `team_id`), so a team can appear only once per season, and a foreign key to `dim_team`, so standings cannot point at a team that does not exist. That is why teams load before standings.
 - **"Load finished" is not proof.** After loading, the notebook asks SQL Server directly: row counts (20 teams, 20 standings rows), a duplicate scan on the key (expected 0), and a join check. The validation script goes further: it damages rows on purpose, reloads, and shows them repaired, proving both the INSERT and UPDATE paths.
 - **Staging before warehouse.** New batches land in keyless staging tables that hold only the current batch, so a bad batch never touches the warehouse directly.
@@ -40,7 +40,7 @@ The report reads `dim_team` and `pl_standings`, linked on `team_id` (one team to
 
 ## Setup
 
-**Prerequisites:** Python 3 with `requests pandas sqlalchemy pyodbc python-dotenv` (the notebook's first cell installs them), SQL Server with the ODBC Driver 17, and a free API-Football key.
+**Prerequisites:** Python 3 with `requests pandas sqlalchemy pyodbc python-dotenv` (the notebook's first cell installs them), SQL Server with the ODBC Driver 17, and an API-Football key.
 
 **Configuration:** copy `.env.example` to `.env` and fill in your values. The notebook reads everything from here, so no secret ever appears in code or on screen:
 
@@ -52,12 +52,16 @@ MSSQL_SERVER=.\SQLEXPRESS
 
 Blank user/password in the config cell means Windows Authentication; no database password is stored anywhere. Set `MSSQL_SERVER` only if your instance has a different name.
 
-**Run order:**
+**Setting up the database - pick ONE of these, never both:**
 
-1. Apply `sql/01_create_tables.sql`, `02_usp_upsert_pl_standings.sql` and `03_usp_upsert_dim_team.sql` (the notebook also carries this SQL inline and can build the database itself).
-2. Run the notebook cells in order: extract, transform, load, check.
-3. Optionally run `sql/04_checks_and_upsert_demo.sql` in SSMS to inventory the objects, view the league table, and watch the deliberate-damage upsert test repair itself.
-4. Open `powerbi/Premier_League_2024_Dashboard.pbix` and point it at your `PremierLeagueDB`.
+- **Path A (default, training database):** run the notebook cells in order. The notebook rebuilds `PremierLeagueDB` from scratch: one cell drops and recreates the database, then later cells create the tables and procedures. Point it only at a disposable training database, because the drop removes anything already in `PremierLeagueDB`.
+- **Path B (manual schema):** create an empty `PremierLeagueDB` yourself, apply `sql/01_create_tables.sql`, `02_usp_upsert_pl_standings.sql` and `03_usp_upsert_dim_team.sql`, and skip the notebook's database-rebuild cell (the one that drops and recreates the database). Running both paths is redundant and the notebook's drop would wipe what the scripts created.
+
+**The validation script - read this before running it:**
+
+> **Warning:** `sql/04_checks_and_upsert_demo.sql` is not fully read-only. Parts A, B and D (object inventory, league-table join, procedure listing) are safe queries. Part C deliberately damages the data: it sets one team's points to 0 and deletes another team, and the damage is only repaired by rerunning the notebook's load cells afterwards. Run Part C only on a disposable copy of the database, never against data you need to keep.
+
+**Then the report:** open `powerbi/Premier_League_2024_Dashboard.pbix` and point it at your `PremierLeagueDB`.
 
 ## Key concepts demonstrated
 
